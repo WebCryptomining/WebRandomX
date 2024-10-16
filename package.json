@@ -1,0 +1,36 @@
+{
+  "name": "webrandomx",
+  "version": "1.0.0",
+  "description": "A JavaScript/WASM implementation of RandomX PoW for web platforms",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack --config ./webpack/webpack.config.prod.js",
+    "dev": "webpack-dev-server --config ./webpack/webpack.config.dev.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WebCryptomining/WebRandomX.git"
+  },
+  "author": "WebCryptomining",
+  "bugs": {
+    "url": "https://github.com/WebCryptomining/WebRandomX/issues"
+  },
+  "homepage": "https://github.com/WebCryptomining/WebRandomX#readme",
+  "devDependencies": {
+    "benchmark": "^2.1.4",
+    "crypto": "^1.0.1",
+    "eslint": "^8.1.0"
+  },
+  "dependencies": {
+    "echarts": "^5.5.0",
+    "file-loader": "^6.2.0",
+    "html-loader": "^3.0.1",
+    "html-webpack-plugin": "^5.5.0",
+    "path": "^0.12.7",
+    "source-map-loader": "^3.0.0",
+    "webpack": "^5.61.0",
+    "webpack-cli": "^4.9.1",
+    "webpack-dev-server": "^4.4.0",
+    "webpack-merge": "^5.8.0"
+  }
+}
