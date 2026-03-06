@@ -130,8 +130,19 @@ if(ARM_ID STREQUAL "aarch64" OR ARM_ID STREQUAL "arm64" OR ARM_ID STREQUAL "armv
   endif()
 endif()
 
-# WASM SIMD
-set_source_files_properties(${randomx_sources} COMPILE_FLAGS -msimd128)
+# RANDOMX_NO_SIMD option: build without WASM SIMD128 for compatibility with
+# instrumentation tools (e.g. Wasabi) that do not support SIMD.
+option(RANDOMX_NO_SIMD "Build without WASM SIMD128 instructions" OFF)
+
+if(NOT RANDOMX_NO_SIMD)
+  # WASM SIMD
+  set_source_files_properties(${randomx_sources} COMPILE_FLAGS -msimd128)
+else()
+  add_definitions(-DRANDOMX_NO_SIMD)
+  # Disable post-MVP features unsupported by Wasabi
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mno-bulk-memory -mno-sign-ext -mno-nontrapping-fptoint")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mno-bulk-memory -mno-sign-ext -mno-nontrapping-fptoint")
+endif()
 
 set(RANDOMX_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/src" CACHE STRING "WebRandomX Include path")
 
@@ -167,25 +178,37 @@ target_link_libraries(web-randomx
   PRIVATE randomx)
 set_property(TARGET web-randomx PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_property(TARGET web-randomx PROPERTY CXX_STANDARD 11)
-set_target_properties(web-randomx PROPERTIES LINK_FLAGS "-os -s WASM=1 -s MODULARIZE=1 -s WASM_BIGINT -s TOTAL_MEMORY=272MB -msimd128 -s EXPORTED_FUNCTIONS=\"['_free', '_malloc']\"")
+if(NOT RANDOMX_NO_SIMD)
+  set(COMPAT_LINK_FLAGS "-msimd128")
+else()
+  set(COMPAT_LINK_FLAGS "-mno-bulk-memory -mno-sign-ext -mno-nontrapping-fptoint")
+endif()
+
+set(COMMON_LINK_FLAGS "-os -s WASM=1 -s MODULARIZE=1 -s WASM_BIGINT -s TOTAL_MEMORY=272MB ${COMPAT_LINK_FLAGS} -s EXPORTED_FUNCTIONS=\"['_free', '_malloc']\" -s EXPORTED_RUNTIME_METHODS=\"['HEAPU8']\"")
+
+set_target_properties(web-randomx PROPERTIES LINK_FLAGS "${COMMON_LINK_FLAGS}")
 
 # Tests
 if(TESTS AND TESTS STREQUAL "true")
-  set_source_files_properties(src/cpp/tests/tests.cpp COMPILE_FLAGS -msimd128)
+  if(NOT RANDOMX_NO_SIMD)
+    set_source_files_properties(src/cpp/tests/tests.cpp COMPILE_FLAGS -msimd128)
+  endif()
   add_executable(web-randomx-tests
     src/cpp/tests/tests.cpp)
   target_link_libraries(web-randomx-tests
     PRIVATE randomx)
   set_property(TARGET web-randomx-tests PROPERTY POSITION_INDEPENDENT_CODE ON)
   set_property(TARGET web-randomx-tests PROPERTY CXX_STANDARD 11)
-  set_target_properties(web-randomx-tests PROPERTIES LINK_FLAGS "-g3 -s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -msimd128")
+  set_target_properties(web-randomx-tests PROPERTIES LINK_FLAGS "-g3 -s WASM=1 -s ALLOW_MEMORY_GROWTH=1 ${COMPAT_LINK_FLAGS}")
 
-  set_source_files_properties(src/cpp/tests/benchmark.cpp COMPILE_FLAGS -msimd128)
+  if(NOT RANDOMX_NO_SIMD)
+    set_source_files_properties(src/cpp/tests/benchmark.cpp COMPILE_FLAGS -msimd128)
+  endif()
   add_executable(web-randomx-benchmark
     src/cpp/tests/benchmark.cpp)
   target_link_libraries(web-randomx-benchmark
     PRIVATE randomx)
   set_property(TARGET web-randomx-benchmark PROPERTY POSITION_INDEPENDENT_CODE ON)
   set_property(TARGET web-randomx-benchmark PROPERTY CXX_STANDARD 11)
-  set_target_properties(web-randomx-benchmark PROPERTIES LINK_FLAGS "-os -s WASM=1 -s MAXIMUM_MEMORY=4GB -s ALLOW_MEMORY_GROWTH=1 -msimd128")
+  set_target_properties(web-randomx-benchmark PROPERTIES LINK_FLAGS "-os -s WASM=1 -s MAXIMUM_MEMORY=4GB -s ALLOW_MEMORY_GROWTH=1 ${COMPAT_LINK_FLAGS}")
 endif()

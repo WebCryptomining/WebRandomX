@@ -1,5 +1,7 @@
 #pragma once
 
+#ifndef RANDOMX_NO_SIMD
+
 #include <wasm_simd128.h>
 
 // shuffle
@@ -54,75 +56,51 @@ static inline v128_t wasm_unpackhi_i64x2(v128_t a, v128_t b) {
                             28, 29, 30, 31);
 }
 
-// convert
-// inline v128_t v128_cvtu8x16_i16x8(const v128_t a) {
-//   const v128_t z = wasm_i8x16_splat(0);
-//   return wasm_unpacklo_i8x16(a, z);
-// }
-
-// inline v128_t v128_cvti8x16_i16x8(const v128_t a) {
-//   return wasm_i16x8_shr(wasm_unpacklo_i8x16(a, a), 8);
-// }
-
-// inline v128_t v128_cvtu8x16_i32x4(const v128_t a) {
-//   const v128_t z = wasm_i8x16_splat(0);
-//   return wasm_unpacklo_i16x8(wasm_unpacklo_i8x16(a, z), z);
-// }
-
-// inline v128_t v128_cvti8x16_i32x4(const v128_t a) {
-//   v128_t r = wasm_unpacklo_i8x16(a, a);
-//   r = wasm_unpacklo_i8x16(r, r);
-//   return wasm_i32x4_shr(r, 24);
-// }
-
-// inline v128_t v128_cvtu16x8_i32x4(const v128_t a) {
-//   const v128_t z = wasm_i8x16_splat(0);
-//   return wasm_unpacklo_i16x8(a, z);
-// }
-
-// inline v128_t v128_cvti16x8_i32x4(const v128_t a) {
-//   return wasm_i32x4_shr(wasm_unpacklo_i16x8(a, a), 16);
-// }
-
-// inline v128_t v128_cvtu32x4_i64x2(const v128_t a) {
-//   const v128_t z = wasm_i8x16_splat(0);
-//   return wasm_unpacklo_i32x4(a, z);
-// }
-
-// inline v128_t v128_cvti32x4_i64x2(const v128_t a) {
-//   return wasm_unpacklo_i32x4(a, wasm_i32x4_shr(a, 31));
-// }
-
-// inline v128_t v128_cvtu8x16_i16x8_high(const v128_t a) {
-//   const v128_t z = wasm_i8x16_splat(0);
-//   return wasm_unpackhi_i8x16(a, z);
-// }
-
-// inline v128_t v128_cvti8x16_i16x8_high(const v128_t a) {
-//   return wasm_i16x8_shr(wasm_unpackhi_i8x16(a, a), 8);
-// }
-
-// inline v128_t v128_cvtu16x8_i32x4_high(const v128_t a) {
-//   const v128_t z = wasm_i8x16_splat(0);
-//   return wasm_unpackhi_i16x8(a, z);
-// }
-
-// inline v128_t v128_cvti16x8_i32x4_high(const v128_t a) {
-//   return wasm_i32x4_shr(wasm_unpackhi_i16x8(a, a), 16);
-// }
-
-// inline v128_t v128_cvtu32x4_i64x2_high(const v128_t a) {
-//   const v128_t z = wasm_i8x16_splat(0);
-//   return wasm_unpackhi_i32x4(a, z);
-// }
-
-// inline v128_t v128_cvti32x4_i64x2_high(const v128_t a) {
-//   return wasm_unpackhi_i32x4(a, wasm_i32x4_shr(a, 31));
-// }
-
 // arithmetic
 static inline v128_t wasm_u64x2_mulu(const v128_t a, const v128_t b) {
   return wasm_u64x2_extmul_low_u32x4(
       wasm_v32x4_shuffle(a, a, 0, 2, 0, 2),
       wasm_v32x4_shuffle(b, b, 0, 2, 0, 2));
 }
+
+#else /* RANDOMX_NO_SIMD — scalar emulation */
+
+#include "rx_vec_i128.h"
+
+#define _WASM_SHUFFLE(fp3, fp2, fp1, fp0) (((fp3) << 6) | ((fp2) << 4) | \
+                                        ((fp1) << 2) | ((fp0)))
+
+static inline rx_vec_i128 wasm_i32x4_shuffle_imm_scalar(rx_vec_i128 a, int imm) {
+  rx_vec_i128 r;
+  r.u32[0] = a.u32[(imm >> 0) & 3];
+  r.u32[1] = a.u32[(imm >> 2) & 3];
+  r.u32[2] = a.u32[(imm >> 4) & 3];
+  r.u32[3] = a.u32[(imm >> 6) & 3];
+  return r;
+}
+
+#define wasm_i32x4_shuffle_imm(__a, __imm) \
+    wasm_i32x4_shuffle_imm_scalar((__a), (__imm))
+
+static inline rx_vec_i128 wasm_unpacklo_i64x2(rx_vec_i128 a, rx_vec_i128 b) {
+  rx_vec_i128 r;
+  r.u64[0] = a.u64[0];
+  r.u64[1] = b.u64[0];
+  return r;
+}
+
+static inline rx_vec_i128 wasm_unpackhi_i64x2(rx_vec_i128 a, rx_vec_i128 b) {
+  rx_vec_i128 r;
+  r.u64[0] = a.u64[1];
+  r.u64[1] = b.u64[1];
+  return r;
+}
+
+static inline rx_vec_i128 wasm_u64x2_mulu(rx_vec_i128 a, rx_vec_i128 b) {
+  rx_vec_i128 r;
+  r.u64[0] = (uint64_t)(uint32_t)a.u64[0] * (uint64_t)(uint32_t)b.u64[0];
+  r.u64[1] = (uint64_t)(uint32_t)a.u64[1] * (uint64_t)(uint32_t)b.u64[1];
+  return r;
+}
+
+#endif /* RANDOMX_NO_SIMD */

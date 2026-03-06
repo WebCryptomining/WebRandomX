@@ -1,0 +1,6 @@
+all:
+	mkdir -p build-noscimd && cd build-noscimd && \
+	emcmake cmake -DARCH=native -DRANDOMX_NO_SIMD=ON .. && make
+
+clean:
+	rm -rf build-noscimd

@@ -1,4 +1,5 @@
 const path = require('path')
+const webpack = require('webpack')
 const HtmlWebpackPlugin = require('html-webpack-plugin')
 
 module.exports = {
@@ -12,6 +13,9 @@ module.exports = {
   },
   context: path.resolve(__dirname, '../src'),
   plugins: [
+    new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+      resource.request = resource.request.replace(/^node:/, '')
+    }),
     new HtmlWebpackPlugin({
       template: path.resolve(__dirname, '../src/index.html'),
       filename: 'index.html',

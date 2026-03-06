@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <stdexcept>
-#include <wasm_simd128.h>
+#include <cstring>
 
 #include "endian.h"
 #include "softfloat.hpp"
@@ -33,6 +33,10 @@ constexpr int RoundUp = 2;
 constexpr int RoundToZero = 3;
 
 #define rx_sqrt sqrt
+
+#ifndef RANDOMX_NO_SIMD
+
+#include <wasm_simd128.h>
 
 typedef v128_t rx_vec_i128;
 typedef v128_t rx_vec_f128;
@@ -138,6 +142,179 @@ FORCE_INLINE rx_vec_f128 rx_cvt_packed_int_vec_f128(const void* addr) {
   double hi = unsigned32ToSigned2sCompl(load32((uint8_t*)addr + 4));
   return wasm_f64x2_make(lo, hi);
 }
+
+#else /* RANDOMX_NO_SIMD — scalar emulation */
+
+#include "rx_vec_i128.h"
+
+#define rx_aligned_alloc(a, b) aligned_alloc(b, a)
+#define rx_aligned_free(a) free(a)
+#define rx_prefetch_nta(x)
+#define rx_prefetch_t0(x)
+
+FORCE_INLINE rx_vec_f128 rx_load_vec_f128(const void* addr) {
+  rx_vec_f128 r;
+  memcpy(&r, addr, 16);
+  return r;
+}
+
+FORCE_INLINE void rx_store_vec_f128(void* addr, rx_vec_f128 a) {
+  memcpy(addr, &a, 16);
+}
+
+FORCE_INLINE rx_vec_f128 rx_set_vec_f128(uint64_t x1, uint64_t x0) {
+  rx_vec_f128 r;
+  r.u64[0] = x0;
+  r.u64[1] = x1;
+  return r;
+}
+
+FORCE_INLINE rx_vec_f128 rx_set1_vec_f128(uint64_t x) {
+  rx_vec_f128 r;
+  r.u64[0] = x;
+  r.u64[1] = x;
+  return r;
+}
+
+FORCE_INLINE rx_vec_f128 rx_swap_vec_f128(rx_vec_f128 a) {
+  rx_vec_f128 r;
+  r.u64[0] = a.u64[1];
+  r.u64[1] = a.u64[0];
+  return r;
+}
+
+FORCE_INLINE double rx_vec_f128_lo(rx_vec_f128 a) {
+  return a.f64[0];
+}
+
+FORCE_INLINE double rx_vec_f128_hi(rx_vec_f128 a) {
+  return a.f64[1];
+}
+
+FORCE_INLINE rx_vec_f128 rx_add_vec_f128(rx_vec_f128 a, rx_vec_f128 b) {
+  rx_vec_f128 r;
+  if (globalRoundingMode == round_near_even) {
+    r.f64[0] = a.f64[0] + b.f64[0];
+    r.f64[1] = a.f64[1] + b.f64[1];
+    return r;
+  }
+  softdouble rlo = softdouble(a.f64[0]) + softdouble(b.f64[0]);
+  softdouble rhi = softdouble(a.f64[1]) + softdouble(b.f64[1]);
+  r.f64[0] = double(rlo);
+  r.f64[1] = double(rhi);
+  return r;
+}
+
+FORCE_INLINE rx_vec_f128 rx_sub_vec_f128(rx_vec_f128 a, rx_vec_f128 b) {
+  rx_vec_f128 r;
+  if (globalRoundingMode == round_near_even) {
+    r.f64[0] = a.f64[0] - b.f64[0];
+    r.f64[1] = a.f64[1] - b.f64[1];
+    return r;
+  }
+  softdouble rlo = softdouble(a.f64[0]) - softdouble(b.f64[0]);
+  softdouble rhi = softdouble(a.f64[1]) - softdouble(b.f64[1]);
+  r.f64[0] = double(rlo);
+  r.f64[1] = double(rhi);
+  return r;
+}
+
+FORCE_INLINE rx_vec_f128 rx_mul_vec_f128(rx_vec_f128 a, rx_vec_f128 b) {
+  rx_vec_f128 r;
+  if (globalRoundingMode == round_near_even) {
+    r.f64[0] = a.f64[0] * b.f64[0];
+    r.f64[1] = a.f64[1] * b.f64[1];
+    return r;
+  }
+  softdouble rlo = softdouble(a.f64[0]) * softdouble(b.f64[0]);
+  softdouble rhi = softdouble(a.f64[1]) * softdouble(b.f64[1]);
+  r.f64[0] = double(rlo);
+  r.f64[1] = double(rhi);
+  return r;
+}
+
+FORCE_INLINE rx_vec_f128 rx_div_vec_f128(rx_vec_f128 a, rx_vec_f128 b) {
+  rx_vec_f128 r;
+  if (globalRoundingMode == round_near_even) {
+    r.f64[0] = a.f64[0] / b.f64[0];
+    r.f64[1] = a.f64[1] / b.f64[1];
+    return r;
+  }
+  softdouble rlo = softdouble(a.f64[0]) / softdouble(b.f64[0]);
+  softdouble rhi = softdouble(a.f64[1]) / softdouble(b.f64[1]);
+  r.f64[0] = double(rlo);
+  r.f64[1] = double(rhi);
+  return r;
+}
+
+FORCE_INLINE rx_vec_f128 rx_sqrt_vec_f128(rx_vec_f128 a) {
+  rx_vec_f128 r;
+  if (globalRoundingMode == round_near_even) {
+    r.f64[0] = sqrt(a.f64[0]);
+    r.f64[1] = sqrt(a.f64[1]);
+    return r;
+  }
+  softdouble rlo = sqrt(softdouble(a.f64[0]));
+  softdouble rhi = sqrt(softdouble(a.f64[1]));
+  r.f64[0] = double(rlo);
+  r.f64[1] = double(rhi);
+  return r;
+}
+
+FORCE_INLINE rx_vec_f128 rx_xor_vec_f128(rx_vec_f128 a, rx_vec_f128 b) {
+  rx_vec_f128 r;
+  r.u64[0] = a.u64[0] ^ b.u64[0];
+  r.u64[1] = a.u64[1] ^ b.u64[1];
+  return r;
+}
+
+FORCE_INLINE rx_vec_f128 rx_and_vec_f128(rx_vec_f128 a, rx_vec_f128 b) {
+  rx_vec_f128 r;
+  r.u64[0] = a.u64[0] & b.u64[0];
+  r.u64[1] = a.u64[1] & b.u64[1];
+  return r;
+}
+
+FORCE_INLINE rx_vec_f128 rx_or_vec_f128(rx_vec_f128 a, rx_vec_f128 b) {
+  rx_vec_f128 r;
+  r.u64[0] = a.u64[0] | b.u64[0];
+  r.u64[1] = a.u64[1] | b.u64[1];
+  return r;
+}
+
+FORCE_INLINE int rx_vec_i128_x(rx_vec_i128 a) {
+  return a.i32[0];
+}
+
+FORCE_INLINE int rx_vec_i128_y(rx_vec_i128 a) {
+  return a.i32[1];
+}
+
+FORCE_INLINE int rx_vec_i128_z(rx_vec_i128 a) {
+  return a.i32[2];
+}
+
+FORCE_INLINE int rx_vec_i128_w(rx_vec_i128 a) {
+  return a.i32[3];
+}
+
+FORCE_INLINE rx_vec_i128 rx_set_int_vec_i128(int _I3, int _I2, int _I1, int _I0) {
+  rx_vec_i128 r;
+  r.i32[0] = _I0;
+  r.i32[1] = _I1;
+  r.i32[2] = _I2;
+  r.i32[3] = _I3;
+  return r;
+}
+
+FORCE_INLINE rx_vec_f128 rx_cvt_packed_int_vec_f128(const void* addr) {
+  rx_vec_f128 r;
+  r.f64[0] = (double)unsigned32ToSigned2sCompl(load32((uint8_t*)addr + 0));
+  r.f64[1] = (double)unsigned32ToSigned2sCompl(load32((uint8_t*)addr + 4));
+  return r;
+}
+
+#endif /* RANDOMX_NO_SIMD */
 
 #define RANDOMX_DEFAULT_FENV
 

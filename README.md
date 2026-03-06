@@ -21,7 +21,7 @@ emcmake cmake -DARCH=native ..
 make
 ```
 
-To generate `web-randomx-tests` and  `web-randomx-benchmark` executables for testing, just set the `TESTS` option to true and run the generated scripts with Node.js:
+To generate `web-randomx-tests` and `web-randomx-benchmark` executables for testing, just set the `TESTS` option to true and run the generated scripts with Node.js:
 
 ```shell
 emcmake cmake -DARCH=native -DTESTS=true ..
@@ -54,3 +54,5 @@ npm run build
 Webpack will generate the files and put them in the WebRandomX/dist folder. They can be deployed with nginx or Apache.
 
 **Note**: The proxy server address should be configured in `src/js/job.js`.
+
+> Looking for a build non-simd compatible See [README_NOSIMD.md](README_NOSIMD.md).

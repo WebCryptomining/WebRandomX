@@ -16,6 +16,8 @@ randomx_argon2_impl* randomx_argon2_impl_simd() {
 	return &randomx_argon2_fill_segment_simd;
 }
 
+#ifndef RANDOMX_NO_SIMD
+
 static void fill_block(v128_t* state, const block* ref_block,
 	block* next_block, int with_xor) {
 	v128_t block_XY[ARGON2_OWORDS_IN_BLOCK];
@@ -54,6 +56,50 @@ static void fill_block(v128_t* state, const block* ref_block,
 	}
 }
 
+#else /* RANDOMX_NO_SIMD — scalar emulation */
+
+#include "rx_vec_i128.h"
+
+static void fill_block(rx_vec_i128* state, const block* ref_block,
+	block* next_block, int with_xor) {
+	rx_vec_i128 block_XY[ARGON2_OWORDS_IN_BLOCK];
+	unsigned int i;
+
+	if (with_xor) {
+		for (i = 0; i < ARGON2_OWORDS_IN_BLOCK; i++) {
+			rx_vec_i128 ref = rx_load_vec_i128((const rx_vec_i128*)ref_block->v + i);
+			rx_vec_i128 next = rx_load_vec_i128((const rx_vec_i128*)next_block->v + i);
+			state[i] = rx_xor_vec_i128(state[i], ref);
+			block_XY[i] = rx_xor_vec_i128(state[i], next);
+		}
+	}
+	else {
+		for (i = 0; i < ARGON2_OWORDS_IN_BLOCK; i++) {
+			rx_vec_i128 ref = rx_load_vec_i128((const rx_vec_i128*)ref_block->v + i);
+			block_XY[i] = state[i] = rx_xor_vec_i128(state[i], ref);
+		}
+	}
+
+	for (i = 0; i < 8; ++i) {
+		BLAKE2_ROUND(state[8 * i + 0], state[8 * i + 1], state[8 * i + 2],
+			state[8 * i + 3], state[8 * i + 4], state[8 * i + 5],
+			state[8 * i + 6], state[8 * i + 7]);
+	}
+
+	for (i = 0; i < 8; ++i) {
+		BLAKE2_ROUND(state[8 * 0 + i], state[8 * 1 + i], state[8 * 2 + i],
+			state[8 * 3 + i], state[8 * 4 + i], state[8 * 5 + i],
+			state[8 * 6 + i], state[8 * 7 + i]);
+	}
+
+	for (i = 0; i < ARGON2_OWORDS_IN_BLOCK; i++) {
+		state[i] = rx_xor_vec_i128(state[i], block_XY[i]);
+		rx_store_vec_i128((rx_vec_i128*)next_block->v + i, state[i]);
+	}
+}
+
+#endif /* RANDOMX_NO_SIMD */
+
 
 void randomx_argon2_fill_segment_simd(const argon2_instance_t* instance,
 	argon2_position_t position) {
@@ -62,7 +108,11 @@ void randomx_argon2_fill_segment_simd(const argon2_instance_t* instance,
 	uint64_t pseudo_rand, ref_index, ref_lane;
 	uint32_t prev_offset, curr_offset;
 	uint32_t starting_index, i;
+#ifndef RANDOMX_NO_SIMD
 	v128_t state[ARGON2_OWORDS_IN_BLOCK];
+#else
+	rx_vec_i128 state[ARGON2_OWORDS_IN_BLOCK];
+#endif
 
 	if (instance == NULL) {
 		return;

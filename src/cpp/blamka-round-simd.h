@@ -4,6 +4,8 @@
 #include "blake2-impl.h"
 #include "intrin_wasm_simd.hpp"
 
+#ifndef RANDOMX_NO_SIMD
+
 #define rotr32(x)                                                              \
     wasm_i32x4_shuffle_imm(x, _WASM_SHUFFLE(2, 3, 0, 1))
 #define rotr24(x)                                                              \
@@ -88,6 +90,113 @@ static inline v128_t fBlaMka(v128_t x, v128_t y) {
         D0 = wasm_unpackhi_i64x2(D0, wasm_unpacklo_i64x2(D1, D1));             \
         D1 = wasm_unpackhi_i64x2(D1, wasm_unpacklo_i64x2(t1, t1));             \
     } while ((void)0, 0)
+
+#else /* RANDOMX_NO_SIMD — scalar emulation */
+
+static inline uint64_t scalar_rotr64(uint64_t x, unsigned int n) {
+    return (x >> n) | (x << (64 - n));
+}
+
+#define rotr32(x) wasm_i32x4_shuffle_imm(x, _WASM_SHUFFLE(2, 3, 0, 1))
+
+static inline rx_vec_i128 scalar_rotr_vec(rx_vec_i128 x, unsigned int n) {
+    rx_vec_i128 r;
+    r.u64[0] = scalar_rotr64(x.u64[0], n);
+    r.u64[1] = scalar_rotr64(x.u64[1], n);
+    return r;
+}
+
+#define rotr24(x) scalar_rotr_vec(x, 24)
+#define rotr16(x) scalar_rotr_vec(x, 16)
+#define rotr63(x) scalar_rotr_vec(x, 63)
+
+static inline rx_vec_i128 fBlaMka(rx_vec_i128 x, rx_vec_i128 y) {
+    rx_vec_i128 z = wasm_u64x2_mulu(x, y);
+    rx_vec_i128 r;
+    r.u64[0] = x.u64[0] + y.u64[0] + 2 * z.u64[0];
+    r.u64[1] = x.u64[1] + y.u64[1] + 2 * z.u64[1];
+    return r;
+}
+
+static inline rx_vec_i128 scalar_xor_vec(rx_vec_i128 a, rx_vec_i128 b) {
+    rx_vec_i128 r;
+    r.u64[0] = a.u64[0] ^ b.u64[0];
+    r.u64[1] = a.u64[1] ^ b.u64[1];
+    return r;
+}
+
+#define G1(A0, B0, C0, D0, A1, B1, C1, D1)                                     \
+    do {                                                                       \
+        A0 = fBlaMka(A0, B0);                                                  \
+        A1 = fBlaMka(A1, B1);                                                  \
+                                                                               \
+        D0 = scalar_xor_vec(D0, A0);                                           \
+        D1 = scalar_xor_vec(D1, A1);                                           \
+                                                                               \
+        D0 = rotr32(D0);                                                       \
+        D1 = rotr32(D1);                                                       \
+                                                                               \
+        C0 = fBlaMka(C0, D0);                                                  \
+        C1 = fBlaMka(C1, D1);                                                  \
+                                                                               \
+        B0 = scalar_xor_vec(B0, C0);                                           \
+        B1 = scalar_xor_vec(B1, C1);                                           \
+                                                                               \
+        B0 = rotr24(B0);                                                       \
+        B1 = rotr24(B1);                                                       \
+    } while ((void)0, 0)
+
+#define G2(A0, B0, C0, D0, A1, B1, C1, D1)                                     \
+    do {                                                                       \
+        A0 = fBlaMka(A0, B0);                                                  \
+        A1 = fBlaMka(A1, B1);                                                  \
+                                                                               \
+        D0 = scalar_xor_vec(D0, A0);                                           \
+        D1 = scalar_xor_vec(D1, A1);                                           \
+                                                                               \
+        D0 = rotr16(D0);                                                       \
+        D1 = rotr16(D1);                                                       \
+                                                                               \
+        C0 = fBlaMka(C0, D0);                                                  \
+        C1 = fBlaMka(C1, D1);                                                  \
+                                                                               \
+        B0 = scalar_xor_vec(B0, C0);                                           \
+        B1 = scalar_xor_vec(B1, C1);                                           \
+                                                                               \
+        B0 = rotr63(B0);                                                       \
+        B1 = rotr63(B1);                                                       \
+    } while ((void)0, 0)
+
+#define DIAGONALIZE(A0, B0, C0, D0, A1, B1, C1, D1)                            \
+    do {                                                                       \
+        rx_vec_i128 t0 = D0;                                                   \
+        rx_vec_i128 t1 = B0;                                                   \
+                                                                               \
+        D0 = C0;                                                               \
+        C0 = C1;                                                               \
+        C1 = D0;                                                               \
+                                                                               \
+        D0 = wasm_unpackhi_i64x2(D1, wasm_unpacklo_i64x2(t0, t0));             \
+        D1 = wasm_unpackhi_i64x2(t0, wasm_unpacklo_i64x2(D1, D1));             \
+        B0 = wasm_unpackhi_i64x2(B0, wasm_unpacklo_i64x2(B1, B1));             \
+        B1 = wasm_unpackhi_i64x2(B1, wasm_unpacklo_i64x2(t1, t1));             \
+    } while ((void)0, 0)
+
+#define UNDIAGONALIZE(A0, B0, C0, D0, A1, B1, C1, D1)                          \
+    do {                                                                       \
+        rx_vec_i128 t0 = C0;                                                   \
+        C0 = C1;                                                               \
+        C1 = t0;                                                               \
+        t0 = B0;                                                               \
+        rx_vec_i128 t1 = D0;                                                   \
+                                                                               \
+        B0 = wasm_unpackhi_i64x2(B1, wasm_unpacklo_i64x2(B0, B0));             \
+        B1 = wasm_unpackhi_i64x2(t0, wasm_unpacklo_i64x2(B1, B1));             \
+        D0 = wasm_unpackhi_i64x2(D0, wasm_unpacklo_i64x2(D1, D1));             \
+        D1 = wasm_unpackhi_i64x2(D1, wasm_unpacklo_i64x2(t1, t1));             \
+    } while ((void)0, 0)
+
+#endif /* RANDOMX_NO_SIMD */
 
 #define BLAKE2_ROUND(A0, A1, B0, B1, C0, C1, D0, D1)                           \
     do {                                                                       \
